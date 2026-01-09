@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g., v0.1.0)"
+        required: true
+      prerelease:
+        description: "Mark as prerelease"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Verify manifest version
+        run: |
+          node -e "const fs=require('fs');const tag='${{ inputs.tag || github.ref_name }}';const version=JSON.parse(fs.readFileSync('manifest.json','utf8')).version;const expected=tag.replace(/^v/, '');if(version!==expected){console.error('manifest.json version '+version+' does not match tag '+expected);process.exit(1);}"
+
+      - name: Package plugin
+        run: |
+          mkdir -p dist
+          cp manifest.json main.js styles.css dist/
+          cd dist
+          zip -r "obsd-smart-compose-${{ inputs.tag || github.ref_name }}.zip" manifest.json main.js styles.css
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: ${{ inputs.tag || github.ref_name }}
+          prerelease: ${{ inputs.prerelease || false }}
+          files: dist/obsd-smart-compose-${{ inputs.tag || github.ref_name }}.zip
+          target_commitish: ${{ github.sha }}
