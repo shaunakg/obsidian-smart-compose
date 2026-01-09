@@ -1,0 +1,10 @@
+{
+  "id": "obsidian-smart-compose",
+  "name": "Smart Compose",
+  "version": "0.1.0",
+  "minAppVersion": "1.11.4",
+  "description": "Provide Gmail and Google Docs-like inline autocomplete using local language models.",
+  "author": "Shaunak G",
+  "authorUrl": "https://srg.id.au",
+  "isDesktopOnly": true
+}

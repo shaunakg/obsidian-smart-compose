@@ -1,0 +1,22 @@
+FROM qwen3:0.6b
+
+# Force "completion" style (no chat wrapper)
+TEMPLATE "{{ .Prompt }}"
+
+# Qwen3 supports /think and /no_think as a soft switch; for autocomplete you usually want no_think.
+SYSTEM /no_think
+
+# Autocomplete-friendly sampling (stable + not too random)
+PARAMETER temperature 0.2
+PARAMETER top_p 0.9
+PARAMETER top_k 40
+PARAMETER repeat_penalty 1.05
+
+# Keep context + output bounded for latency
+PARAMETER num_ctx 4096
+PARAMETER num_predict 32
+
+# Stop early to avoid multi-paragraph rambles.
+# (You can add/remove stops depending on your writing style.)
+PARAMETER stop "\n"
+
