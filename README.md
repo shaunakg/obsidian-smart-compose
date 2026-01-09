@@ -7,24 +7,6 @@ Provide Gmail and Google Docs-like inline autocomplete using local language mode
 - Inline ghost-text suggestions while typing
 - Accept with Tab or Right Arrow
 - Fast, local-only inference via Ollama
-- Minimal UI and settings
-
-## Install
-
-1. Build the plugin:
-
-   ```sh
-   pnpm install
-   pnpm run build
-   ```
-
-2. Copy the plugin folder into your vault at:
-
-   ```
-   <vault>/.obsidian/plugins/obsd-smart-compose
-   ```
-
-3. Enable the plugin in Obsidian.
 
 ## Set up Ollama for inline autocomplete
 
