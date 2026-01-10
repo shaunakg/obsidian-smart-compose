@@ -129,6 +129,41 @@ function isInFrontmatter(doc: Text, pos: number): boolean {
   return true;
 }
 
+function getFrontmatterContent(doc: Text): string {
+  if (doc.lines < 2) {
+    return "";
+  }
+  const firstLine = doc.line(1).text.trim();
+  if (firstLine !== "---") {
+    return "";
+  }
+  for (let lineNo = 2; lineNo <= doc.lines; lineNo++) {
+    const lineText = doc.line(lineNo).text.trim();
+    if (lineText === "---") {
+      const start = doc.line(2).from;
+      const end = doc.line(lineNo).from;
+      return doc.sliceString(start, end).trimEnd();
+    }
+  }
+  const start = doc.line(2).from;
+  return doc.sliceString(start, doc.length).trimEnd();
+}
+
+function escapeYamlString(value: string): string {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`;
+}
+
+function buildPrompt(prefix: string, doc: Text, fileName: string): string {
+  const frontmatterContent = getFrontmatterContent(doc);
+  const safeFileName = fileName.trim() || "Untitled";
+  const frontmatterLines = ["---", `filename: ${escapeYamlString(safeFileName)}`];
+  if (frontmatterContent) {
+    frontmatterLines.push(frontmatterContent);
+  }
+  frontmatterLines.push("---");
+  return `${frontmatterLines.join("\n")}\n${prefix}`;
+}
+
 function isInFencedCodeBlock(doc: Text, pos: number): boolean {
   const posLine = doc.lineAt(pos).number;
   let inFence = false;
@@ -174,7 +209,8 @@ function debugLog(
 }
 
 function createAutocompleteExtension(
-  settingsGetter: () => AutocompleteSettings
+  settingsGetter: () => AutocompleteSettings,
+  fileNameGetter: () => string
 ) {
   const viewPlugin = ViewPlugin.fromClass(
     class {
@@ -196,22 +232,16 @@ function createAutocompleteExtension(
           if (event.key !== "Tab" && event.key !== "ArrowRight" && event.key !== "Escape") {
             return;
           }
-          debugLog(settingsGetter, "view keydown capture", { key: event.key });
           const suggestion = this.view.state.field(suggestionField);
           if (!suggestion) {
-            debugLog(settingsGetter, "capture keydown - no suggestion", {
-              key: event.key
-            });
             return;
           }
           event.preventDefault();
           event.stopImmediatePropagation();
           if (event.key === "Escape") {
-            debugLog(settingsGetter, "capture keydown dismiss");
             this.clearSuggestion();
             return;
           }
-          debugLog(settingsGetter, "capture keydown accept", { key: event.key });
           const pos = this.view.state.selection.main.head;
           this.view.dispatch({
             changes: { from: pos, to: pos, insert: suggestion },
@@ -236,22 +266,16 @@ function createAutocompleteExtension(
           if (!inEditor) {
             return;
           }
-          debugLog(settingsGetter, "window keydown capture", { key: event.key });
           const suggestion = this.view.state.field(suggestionField);
           if (!suggestion) {
-            debugLog(settingsGetter, "window capture - no suggestion", {
-              key: event.key
-            });
             return;
           }
           event.preventDefault();
           event.stopImmediatePropagation();
           if (event.key === "Escape") {
-            debugLog(settingsGetter, "window capture dismiss");
             this.clearSuggestion();
             return;
           }
-          debugLog(settingsGetter, "window capture accept", { key: event.key });
           const pos = this.view.state.selection.main.head;
           this.view.dispatch({
             changes: { from: pos, to: pos, insert: suggestion },
@@ -265,19 +289,16 @@ function createAutocompleteExtension(
 
       update(update: ViewUpdate): void {
         if (update.focusChanged && !this.view.hasFocus) {
-          debugLog(settingsGetter, "editor blur - clear");
           this.cancelAndClear(true);
           return;
         }
 
         if (update.selectionSet && !update.docChanged) {
-          debugLog(settingsGetter, "selection moved - clear");
           this.cancelAndClear(true);
           return;
         }
 
         if (update.docChanged) {
-          debugLog(settingsGetter, "doc changed - schedule");
           this.cancelAndClear(true);
           this.schedule();
         }
@@ -293,7 +314,6 @@ function createAutocompleteExtension(
         this.clearDebounce();
         const settings = settingsGetter();
         const delay = clamp(settings.debounceMs, 100, 500);
-        debugLog(settingsGetter, "debounce scheduled", { delay });
         this.debounceHandle = window.setTimeout(() => {
           this.debounceHandle = null;
           void this.maybeRequest();
@@ -302,11 +322,9 @@ function createAutocompleteExtension(
 
       private async maybeRequest(): Promise<void> {
         if (!this.view.hasFocus) {
-          debugLog(settingsGetter, "skip request - no focus");
           return;
         }
         if (this.requestAbort) {
-          debugLog(settingsGetter, "skip request - in flight");
           return;
         }
         if (!this.isCursorEligible()) {
@@ -314,10 +332,8 @@ function createAutocompleteExtension(
         }
         const prefix = this.getPrefix();
         if (!prefix) {
-          debugLog(settingsGetter, "skip request - prefix too short/empty");
           return;
         }
-        debugLog(settingsGetter, "request start", { prefixChars: prefix.length });
         await this.sendRequest(prefix);
       }
 
@@ -325,46 +341,37 @@ function createAutocompleteExtension(
         const state = this.view.state;
         const selection = state.selection.main;
         if (!selection.empty) {
-          debugLog(settingsGetter, "cursor not eligible - non-empty selection");
           return false;
         }
         const pos = selection.head;
         if (pos === 0) {
-          debugLog(settingsGetter, "cursor not eligible - start of doc");
           return false;
         }
         const prevChar = state.doc.sliceString(pos - 1, pos);
         if (prevChar === " ") {
           if (pos < 2) {
-            debugLog(settingsGetter, "cursor not eligible - space at start");
             return false;
           }
           const prevPrev = state.doc.sliceString(pos - 2, pos - 1);
           if (isWhitespace(prevPrev)) {
-            debugLog(settingsGetter, "cursor not eligible - double space");
             return false;
           }
         } else if (!isWordChar(prevChar) && !isPunctuationTrigger(prevChar)) {
-          debugLog(settingsGetter, "cursor not eligible - not end of word");
           return false;
         }
         const nextChar = state.doc.sliceString(pos, pos + 1);
         if (nextChar && isWordChar(nextChar)) {
-          debugLog(settingsGetter, "cursor not eligible - mid token");
           return false;
         }
         if (isInFrontmatter(state.doc, pos)) {
-          debugLog(settingsGetter, "cursor not eligible - frontmatter");
           return false;
         }
         const settings = settingsGetter();
         if (settings.disableInCodeBlocks) {
           if (isInFencedCodeBlock(state.doc, pos)) {
-            debugLog(settingsGetter, "cursor not eligible - fenced code");
             return false;
           }
           if (isInInlineCode(state.doc, pos)) {
-            debugLog(settingsGetter, "cursor not eligible - inline code");
             return false;
           }
         }
@@ -394,12 +401,13 @@ function createAutocompleteExtension(
         const controller = new AbortController();
         this.requestAbort = controller;
         const timeoutId = window.setTimeout(() => controller.abort(), 1500);
+        const prompt = buildPrompt(prefix, this.view.state.doc, fileNameGetter());
 
         const body = {
           model: settings.model,
-          prompt: prefix,
+          prompt,
           raw: true,
-          stream: false,
+          stream: true,
           options: {
             temperature: 0.2,
             top_p: 0.9,
@@ -430,29 +438,65 @@ function createAutocompleteExtension(
             return;
           }
 
-          const data = (await response.json()) as { response?: unknown };
-          if (requestId !== this.requestId) {
-            debugLog(settingsGetter, "request stale - discard body");
+          if (!response.body) {
+            debugLog(settingsGetter, "response body empty");
             return;
           }
 
-          if (!data || typeof data.response !== "string") {
-            debugLog(settingsGetter, "malformed response");
-            return;
-          }
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let accumulatedResponse = "";
+          let buffer = "";
 
-          if (data.response.length === 0) {
-            debugLog(settingsGetter, "empty suggestion");
-            return;
-          }
+          while (true) {
+            const { done, value } = await reader.read();
+            
+            if (requestId !== this.requestId) {
+              await reader.cancel();
+              break;
+            }
+            
+            if (done) {
+              break;
+            }
 
-          debugLog(settingsGetter, "suggestion received", {
-            chars: data.response.length
-          });
-          this.showSuggestion(data.response);
+            const chunk = decoder.decode(value, { stream: true });
+            buffer += chunk;
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
+
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              try {
+                const data = JSON.parse(line);
+                
+                if (data.response) {
+                  accumulatedResponse += data.response;
+                  this.showSuggestion(accumulatedResponse);
+                }
+                
+                if (data.done) {
+                  if (typeof data.total_duration === "number") {
+                    const totalDurationMs = data.total_duration / 1_000_000;
+                    console.info("[Smart Compose]", "generation time", {
+                      totalDurationNs: data.total_duration,
+                      totalDurationMs
+                    });
+                  }
+                  debugLog(settingsGetter, "suggestion received", {
+                    chars: accumulatedResponse.length
+                  });
+                }
+              } catch (e) {
+                // Ignore parse errors for partial lines
+              }
+            }
+          }
         } catch (error) {
           if (settings.debugLogging && error instanceof Error) {
-            console.debug("[Smart Compose]", "request error", error.message);
+            if (error.name !== "AbortError") {
+              console.debug("[Smart Compose]", "request error", error.message);
+            }
           }
         } finally {
           window.clearTimeout(timeoutId);
@@ -471,12 +515,10 @@ function createAutocompleteExtension(
         let suggestion = text;
         if (prevChar === " " && suggestion.startsWith(" ")) {
           suggestion = suggestion.slice(1);
-          debugLog(settingsGetter, "dedupe leading space");
         }
         if (!suggestion) {
           return;
         }
-        debugLog(settingsGetter, "show suggestion");
         this.view.dispatch({
           effects: setSuggestionEffect.of(suggestion)
         });
@@ -486,7 +528,6 @@ function createAutocompleteExtension(
         if (!this.view.state.field(suggestionField)) {
           return;
         }
-        debugLog(settingsGetter, "clear suggestion");
         this.view.dispatch({
           effects: setSuggestionEffect.of(null)
         });
@@ -494,7 +535,6 @@ function createAutocompleteExtension(
 
       private cancelRequest(): void {
         if (this.requestAbort) {
-          debugLog(settingsGetter, "cancel request");
           this.requestAbort.abort();
           this.requestAbort = null;
         }
@@ -503,7 +543,6 @@ function createAutocompleteExtension(
 
       private clearDebounce(): void {
         if (this.debounceHandle !== null) {
-          debugLog(settingsGetter, "clear debounce");
           window.clearTimeout(this.debounceHandle);
           this.debounceHandle = null;
         }
@@ -537,9 +576,6 @@ function createAutocompleteExtension(
       return false;
     }
     const pos = view.state.selection.main.head;
-    debugLog(settingsGetter, "accept suggestion", {
-      chars: suggestion.length
-    });
     view.dispatch({
       changes: { from: pos, to: pos, insert: suggestion },
       selection: { anchor: pos + suggestion.length },
@@ -553,7 +589,6 @@ function createAutocompleteExtension(
     if (!suggestion) {
       return false;
     }
-    debugLog(settingsGetter, "dismiss suggestion");
     view.dispatch({
       effects: setSuggestionEffect.of(null)
     });
@@ -565,13 +600,9 @@ function createAutocompleteExtension(
       if (event.key === "Tab" || event.key === "ArrowRight") {
         const suggestion = view.state.field(suggestionField);
         if (!suggestion) {
-          debugLog(settingsGetter, "keydown ignored - no suggestion", {
-            key: event.key
-          });
           return false;
         }
         event.preventDefault();
-        debugLog(settingsGetter, "keydown accept", { key: event.key });
         acceptSuggestion(view);
         return true;
       }
@@ -581,7 +612,6 @@ function createAutocompleteExtension(
           return false;
         }
         event.preventDefault();
-        debugLog(settingsGetter, "keydown dismiss");
         clearSuggestion(view);
         return true;
       }
@@ -620,7 +650,10 @@ export default class InlineAutocompletePlugin extends Plugin {
     await this.loadSettings();
 
     this.registerEditorExtension(
-      createAutocompleteExtension(() => this.settings)
+      createAutocompleteExtension(
+        () => this.settings,
+        () => this.app.workspace.getActiveFile()?.name ?? "Untitled"
+      )
     );
 
     this.addSettingTab(new InlineAutocompleteSettingTab(this.app, this));
