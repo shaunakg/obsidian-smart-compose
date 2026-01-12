@@ -1,6 +1,6 @@
 {
   "name": "obsd-smart-compose",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Ultra-low-latency inline autocomplete for Obsidian using local language models.",
   "main": "main.js",
   "scripts": {
