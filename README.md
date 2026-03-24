@@ -51,19 +51,18 @@ This plugin requires a local Ollama server. Most mobile devices cannot run Ollam
 
 ## Create an autocomplete model (recommended)
 
-You can use `qwen3:0.6b` directly, but creating a dedicated model makes it easier to keep autocomplete settings consistent.
+You can use `gemma3:270m` directly, but creating a dedicated model makes it easier to keep autocomplete settings consistent.
 
 ### Download the model definition
 
 The `Modelfile` is the Ollama model definition that sets the base model, prompt template, and generation parameters. It keeps autocomplete output short and stable for low latency. If your device is slower or faster than the defaults, adjust the parameters to match your hardware and workflow.
 
-This `Modelfile` uses `qwen3:0.6b` and applies these changes:
+This `Modelfile` uses `gemma3:270m` and applies these changes:
 
 - **TEMPLATE "{{ .Prompt }}"** — uses the raw prompt without a chat wrapper.
-- **SYSTEM /no_think** — disables think-style output for faster completion.
-- **PARAMETER temperature 0.2, top_p 0.9, top_k 40, repeat_penalty 1.05** — stable, low-variance sampling.
-- **PARAMETER num_ctx 4096** — sets the model context size.
-- **PARAMETER num_predict 32** — caps output length.
+- **PARAMETER temperature 0, top_p 0.8, top_k 20, repeat_penalty 1.05** — highly stable, low-variance sampling.
+- **PARAMETER num_ctx 1024** — keeps prompt evaluation work bounded.
+- **PARAMETER num_predict 16** — caps output length.
 - **PARAMETER stop "\\n"** — stops at a newline to avoid multi-line output.
 
 1. Download `Modelfile` from the repo:
@@ -77,12 +76,12 @@ This `Modelfile` uses `qwen3:0.6b` and applies these changes:
 Run:
 
 ```bash
-ollama create qwen-0.6b-autocomplete -f Modelfile
+ollama create gemma3-ac -f Modelfile
 ```
 
 > [!info]+ Why these parameters
 > - **TEMPLATE "{{ .Prompt }}"** — avoids chat formatting tokens and keeps the prompt small.
-> - **temperature 0.2** — reduces randomness so suggestions follow your text.
+> - **temperature 0** — makes suggestions as deterministic as possible.
 > - **num_predict 16** — limits output length, which reduces latency.
 > - **stop "\n"** — prevents the model from continuing into multiple lines.
 >
@@ -96,10 +95,10 @@ ollama create qwen-0.6b-autocomplete -f Modelfile
 
 2. Set:
    - **Ollama URL** — `http://localhost:11434`
-   - **Model** — `qwen-0.6b-autocomplete`
+   - **Model** — `gemma3-ac`
 
 > [!tip]- Use a dedicated model name
-> Using `qwen-0.6b-autocomplete` makes it clear which model is tuned for inline suggestions.
+> Using `gemma3-ac` makes it clear which model is tuned for inline suggestions.
 
 ---
 
@@ -113,7 +112,7 @@ Run:
 ollama list
 ```
 
-You should see `qwen-0.6b-autocomplete` in the list.
+You should see `gemma3-ac` in the list.
 
 ### Test a short completion
 
@@ -121,7 +120,7 @@ Run:
 
 ```bash
 curl http://localhost:11434/api/generate -H "Content-Type: application/json" -d '{
-  "model": "qwen-0.6b-autocomplete",
+  "model": "gemma3-ac",
   "prompt": "I think the main reason this works is",
   "raw": true,
   "stream": false,
@@ -146,7 +145,7 @@ Use the defaults as a starting point, then test changes one at a time. Measure h
 Edit `PARAMETER num_predict` in your `Modelfile`, then recreate the model:
 
 ```bash
-ollama create qwen-0.6b-autocomplete -f Modelfile
+ollama create gemma3-ac -f Modelfile
 ```
 
 Suggested values:
@@ -163,15 +162,15 @@ Suggested values:
 Suggested presets:
 
 - **More stable**
-  - `temperature 0.1`
-  - `top_p 0.9`
+  - `temperature 0`
+  - `top_p 0.8`
 
 - **Default**
-  - `temperature 0.2`
-  - `top_p 0.9`
+  - `temperature 0`
+  - `top_p 0.8`
 
 - **More varied**
-  - `temperature 0.35`
+  - `temperature 0.2`
   - `top_p 0.95`
 
 > [!info]+ Why this matters

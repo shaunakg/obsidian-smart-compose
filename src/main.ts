@@ -21,7 +21,7 @@ interface AutocompleteSettings {
 
 const DEFAULT_SETTINGS: AutocompleteSettings = {
   ollamaUrl: "http://localhost:11434",
-  model: "qwen3:0.6b",
+  model: "gemma3-ac",
   contextChars: 400,
   debounceMs: 250,
   maxTokens: 16,
@@ -409,9 +409,9 @@ function createAutocompleteExtension(
           raw: true,
           stream: true,
           options: {
-            temperature: 0.2,
-            top_p: 0.9,
-            top_k: 40,
+            temperature: 0,
+            top_p: 0.8,
+            top_k: 20,
             repeat_penalty: 1.05,
             num_predict: clamp(settings.maxTokens, 8, 32),
             stop: ["\n"]
@@ -702,7 +702,7 @@ class InlineAutocompleteSettingTab extends PluginSettingTab {
       .setDesc("Ollama model name for raw continuation.")
       .addText(text =>
         text
-          .setPlaceholder("qwen3:0.6b")
+          .setPlaceholder("gemma3-ac")
           .setValue(this.plugin.settings.model)
           .onChange(async value => {
             this.plugin.settings.model = value.trim() || DEFAULT_SETTINGS.model;
